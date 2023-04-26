@@ -1,0 +1,4 @@
+[submodule "RatSim"]
+	path = RatSim
+	url = https://github.com/francesco-mannella/RatSim.git
+	branch = master

@@ -1,0 +1,17 @@
+numpy
+scipy
+pandas
+seaborn
+matplotlib
+Pillow
+setuptools
+ipython
+jupyter
+gym
+scikit-image
+opencv-python
+git+https://github.com/francesco-mannella/RatSim.git@WP2_T2_1
+neo==0.8.0
+plotly==5.10.0
+kaleido
+regex
