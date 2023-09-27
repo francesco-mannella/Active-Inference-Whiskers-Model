@@ -1,26 +1,25 @@
 import matplotlib
 
-matplotlib.use('agg')
-
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec as GS
 import numpy as np
 import gym, RatSim
-from simulation.ActiveInverenceModel import GM
-from simulation.params import Params
-from tools import make_simulation_gif_video
-from analysis.stats.fourier_transform import band_filter
-from analysis.stats.crosscorr import (
-    compute_correlation_desynchronization_touch,
+from src.simulation.ActiveInferenceModel import GM
+from src.simulation.params import Params
+from src.tools import make_simulation_gif_video
+from src.analysis.stats.fourier_transform import band_filter
+from src.analysis.stats.crosscorr import (
+    compute_correlation_desynchronization,
 )
-from RatSim.envs.mkvideo import vidManager
+from src.simulation.mkvideo import vidManager
 import pandas as pd
 import seaborn as sns
 import os, regex as re
-import tools as tools
+import src.tools as tools
 import gc
 from PIL import Image
 
+# %%
 plt.ioff()
 
 
@@ -43,65 +42,62 @@ class RendererOnstep:
         self.gs = GS(10, 30)
         self.ax1 = None
         self.ax2 = None
-        self.vm = vidManager(self.fig, name='onstep', duration=400)
+        self.vm = vidManager(self.fig, name='onstep', dirname='', duration=400)
 
     def __call__(self, data, touches, decisions):
+
         self.data = data
         self.touches = touches
         self.decisions = decisions
-        
-        self.fig.clear()
-        self.ax1 = self.fig.add_subplot(211)
-        self.ax2 = self.fig.add_subplot(212)
+
+        if self.ax1 is None:
+            self.ax1 = self.fig.add_subplot(211)
+            
+            palette = sns.color_palette('flare', 3)
+            self.left_whisks_plot = [self.ax1.plot(0,0, color=palette[i])[0] for i in range(3)]
+            palette = sns.color_palette('crest', 3)
+            self.right_whisks_plot = [self.ax1.plot(0,0, color=palette[i])[0] for i in range(3)]
+
+            self.ax1.set_xlim(self.xlim)
+            self.ax1.set_ylim([-1.2, 2.4])
+
+        if self.ax2 is None:
+            self.ax2 = self.fig.add_subplot(212)
+
+            palette = sns.color_palette('hls', 2)
+            self.objs_plot = [self.ax2.plot(0,0, color=palette[i])[0] for i in range(2)]
+
+            self.ax2.set_xlim(self.xlim)
+            self.ax2.set_ylim([-0.2, 1.2])
 
         df = self.mkDataFrame()
-
-        palette = sns.color_palette('hls', 6)
-        sns.lineplot(
-            ax=self.ax1,
-            data=df,
-            x='ts',
-            y='Angle',
-            hue='Whiskers',
-            palette=palette,
-            legend=None,
-            errorbar=None,
-        )
-        sp = sns.scatterplot(
-            ax=self.ax1,
-            data=df,
-            x='ts',
-            y='touch',
-            hue='Whiskers',
-            palette=palette,
-            legend=False,
-            alpha=0.3,
-        )
-        self.ax1.set_xlim(self.xlim)
-        self.ax1.set_ylim([-1.2, 2.4])
+       
+        for i, whisk in enumerate(df[["left" in w for w in df.Whiskers]].Whiskers.unique()):
+            cdf = df.query(f"Whiskers == '{whisk}'")
+            self.left_whisks_plot[i].set_data(cdf.ts, cdf.Angle)
+        
+        for i, whisk in enumerate(df[["right" in w for w in df.Whiskers]].Whiskers.unique()):
+            cdf = df.query(f"Whiskers == '{whisk}'")
+            self.right_whisks_plot[i].set_data(cdf.ts, cdf.Angle)
 
         objs = ['obj0', 'obj1']
         df = pd.DataFrame({o: x for o, x in zip(objs, self.decisions.T)})
         t = np.arange(len(self.decisions))
         df['ts'] = t / 1000
         df = df.melt(id_vars=['ts'], value_vars=objs)
-
         df = df.rename(columns={'variable': 'Objects', 'value': 'decision'})
-        sns.lineplot(
-            ax=self.ax2,
-            data=df,
-            x='ts',
-            y='decision',
-            hue='Objects',
-            legend=None,
-            errorbar=None,
-        )
-        self.ax2.set_xlim(self.xlim)
-        self.ax2.set_ylim([-0.2, 1.2])
+
+
+        for i, obj in enumerate(df.Objects.unique()):
+            cdf = df.query(f"Objects == '{obj}'")
+            self.objs_plot[i].set_data(cdf.ts, cdf.decision)
+
+
         self.fig.canvas.draw()
         self.vm.save_frame()
 
     def mkDataFrame(self):
+        
         df = pd.DataFrame({l: k for k, l in zip(self.data.T, self.labels)})
         t = np.arange(len(self.data))
         df['ts'] = (t) / 1000
@@ -118,7 +114,22 @@ class RendererOnstep:
 
         return df
 
+# %%
+def generate_random_move_peaks(rng, st):
 
+    t = np.linspace(0, 1, st)
+    amplitude = 0.05
+    s = 0.005
+    peaks_num = 20
+    peaks = rng.uniform(0, 1, peaks_num)
+    angles = rng.uniform(-.04, .04, peaks_num)
+
+    angles = amplitude*np.array([angle*np.exp(-0.5*(s**-2)*(t-mean)**2).reshape(-1, 1)
+                            for angle, mean
+                            in zip(angles, peaks)]).sum(0).T
+    return angles
+
+# %%
 def run_simulation(
     obj=0,
     visual_trial=False,
@@ -130,14 +141,20 @@ def run_simulation(
     log=True,
     params=None,
 ):
+    if seed is None:
+        seed = np.frombuffer(os.urandom(4), dtype=np.uint32)[0]
+
     env = None
+    plt.close('all')
+    gc.collect()
     env = gym.make('RatSim-v0', disable_env_checker=True)
     env = env.unwrapped
+    env.set_seed(seed)
 
     pm = params if params is not None else Params()
     pm.time_obj_movement += int((pm.phase) / (pm.dt * pm.scale))
 
-    pm.time_light_switched_on = (
+    pm.time_light_switched_on = max(0, 
             pm.time_obj_movement + 
             pm.relative_time_switched_on
             )
@@ -146,10 +163,8 @@ def run_simulation(
     pm.time_light_switched_on += int((pm.phase) / (pm.dt * pm.scale))
 
     pm.obj = obj
-
-    if seed is None:
-        seed = np.frombuffer(os.urandom(4), dtype=np.uint32)[0]
-
+    env.set_world(pm.obj)
+   
     # initializing random state
     rng = np.random.RandomState(seed)
     if log == True:
@@ -170,6 +185,8 @@ def run_simulation(
 
     env.noise = noise
     env.set_dt(0.5 * np.pi * pm.freq * pm.cicles)
+    
+    cheek_sensors_num = env.num_touch_sensors//2
 
     # initialization of generative model
     gm = GM(
@@ -184,8 +201,8 @@ def run_simulation(
         nu=pm.nu,
         Sigma_nu=pm.Sigma_nu,
         eta_nu=pm.eta_nu,
-        nu_obj0=pm.nu_obj0,
-        nu_obj1=pm.nu_obj1,
+        nu_obj0=pm.nu_obj0.copy(),
+        nu_obj1=pm.nu_obj1.copy(),
         tau_mu_y=pm.tau_mu_y,
         Sigma_mu_y=pm.Sigma_mu_y,
         eta_mu_y=pm.eta_mu_y,
@@ -216,6 +233,7 @@ def run_simulation(
         'gp_dx': np.zeros([pm.stime, 6]),
         'gp_alpha': np.zeros([pm.stime, 6]),
         'obj': np.zeros([pm.stime, 2]),
+        'light': np.zeros(pm.stime),
         'frames': [],
     }
 
@@ -223,10 +241,11 @@ def run_simulation(
     state = env.reset(pm.obj)
     angle_prevs = state['JOINT_POSITIONS'][:-1]
     init_pos = pm.stop_pos - pm.obj_mov_length
+    angle = (0.1 * noise * rng.randn()) + pm.obj_angle 
     pos = env.move_object(
         'box',
-        [0, init_pos + (not touch_trial) * pm.notouch_initial_displacement],
-        angle=0.1 * noise * rng.randn(),
+        [0 + 3*angle, init_pos + (not touch_trial) * pm.notouch_initial_displacement],
+        angle=angle,
     )
     path = pm.stop_pos - pos[1]
     mov_increment = path / pm.obj_mov_duration
@@ -237,8 +256,7 @@ def run_simulation(
     Sigma_vision_saved = gm.Sigma_s_v
     gm.Sigma_s_v = 100000
 
-    Sigma_t_saved = gm.Sigma_s_t
-    gm.Sigma_s_t = 100000
+    light_on = 0
 
     for t in range(pm.stime // 6):
 
@@ -246,7 +264,7 @@ def run_simulation(
         # Step
 
         angle_prevs = state['JOINT_POSITIONS'][:-1]
-
+        
         state, rew, info, done = env.step(pm.action)
 
         touches = state['TOUCH_SENSORS']
@@ -261,7 +279,8 @@ def run_simulation(
             x=env.oscillator,
             visual_input=visual_input,
         )
-
+        
+    touches = state["TOUCH_SENSORS"] 
     for t in range(pm.stime):
 
         # -------------------------------------------------------------------------
@@ -279,12 +298,10 @@ def run_simulation(
 
             if t == pm.time_light_switched_on:
                 if visual_trial == True:
+                    light_on = 1
                     visual_input[pm.obj] = 1
                     gm.Sigma_s_v = Sigma_vision_saved
-
-            if t == pm.time_obj_movement:
-                gm.Sigma_s_t = Sigma_t_saved
-
+            
 
         # -------------------------------------------------------------------------
         # Step
@@ -294,8 +311,6 @@ def run_simulation(
         state, rew, info, done = env.step(pm.action)
 
         touches = state['TOUCH_SENSORS']
-        if sum(touches) > 0:
-            gm.Sigma_s_t = Sigma_t_saved
 
         # noise in the receptor
         angle_velocities = (
@@ -327,6 +342,7 @@ def run_simulation(
         data['gp_alpha'][t] = pm.action[:6]
         data['touch_sensor'][t] = touches
         data['obj'][t] = visual_input
+        data['light'][t] = light_on
 
         # Plotting
         if plot is True or jupyter is True:
@@ -385,18 +401,19 @@ def get_sm_var(data, var, var_name, params=None):
 
 def build_df(
     data,
-    filtered=True,
     mod='desynchronization',
     pred=True,
     win_gap=0.05,
     win_size=0.3,
+    corrs=False,
+    filter_frequency_bounds=(4, 12),
     disable_filtering=False,
     params=None,
 ):
     dfv = []
     for var, var_name in zip(
-        ['gp_x', 'touch_sensor', 'gm_mu', 'gm_PE_s_t'],
-        ['Angle', 'touch', 'PredAngle', 'PredError'],
+        ['gp_x', 'touch_sensor','gm_nu', 'gm_mu', 'gm_PE_s_t'],
+        ['Angle', 'touch', "PredAmpl", 'PredAngle', 'PredError'],
     ):
         cdf = get_sm_var(data, var, var_name, params)
         dfv.append(cdf)
@@ -416,39 +433,39 @@ def build_df(
         ts_max = df.groupby('ts').first().reset_index()['ts'].max()
         ts_rng = ts_max - ts_min
 
-        df_flt = band_filter(
-            df.copy(),
+        df = band_filter(
+            df,
             variable='Whiskers',
             value='Angle',
-            filtered=filtered,
-            mode=(0.5, 80),
+            mode=filter_frequency_bounds,
             h=ts_rng / ts_num,
         )
 
-        df_flt['ttouch'] = df_flt.groupby('Whiskers')['touch'].transform(
+        df['ttouch'] = df.groupby('Whiskers')['touch'].transform(
             lambda x: gaussian_filter(x.to_numpy(), prec=0.95, smoothing=0.1)
         )
 
-        df_flt['corrs'] = compute_correlation_desynchronization_touch(
-            ts=df_flt['ts'].to_numpy(),
-            desynchronization=df_flt['desynchronization'].to_numpy(),
-            touch=df_flt['touch'].to_numpy(),
-            win_gap=win_gap,
-            win_size=win_size,
-        )
+        if corrs:
+            df['corrs'] = compute_correlation_desynchronization(
+                ts=df['ts'].to_numpy(),
+                desynchronization=df['desynchronization'].to_numpy(),
+                touch=df['touch'].to_numpy(),
+                win_gap=win_gap,
+                win_size=win_size,
+            )
+        else: 
+            df['corrs'] = 0
 
-        df['Filtered_Angle'] = df_flt['Angle']
 
-    df['Speed'] = df_flt['speed']
-    df['Accel'] = df_flt['accel']
-    df['Momentum'] = df_flt['momentum']
-    df['Desynchronization'] = df_flt['desynchronization']
-    df['Corrs'] = df_flt['corrs']
+
     df['Direction'] = [re.sub(r'^(\w+)_\d', r'\1', s) for s in df['Whiskers']]
-    df['Corrs'] = df_flt['corrs']
-    df['Corrs_pred'] = np.minimum(0, df_flt['corrs'])
-    df['Corrs_react'] = np.maximum(0, df_flt['corrs'])
     df['touch_per_whisk'] = df['touch']
+
+    df = df.rename(columns={
+        'desynchronization': 'Desynchronization',
+        'corrs': 'Corrs',
+        })
+
 
     def dirtouch(x):
         x['touch'] = x['touch'].max()
@@ -458,14 +475,19 @@ def build_df(
     return df
 
 
-def build_df1(data):
+def build_df1(data, params=None):
 
-    t = np.arange(len(data['gm_mu_y']))
+    t = np.arange(len(data["gm_mu_y"]))
+    dt = 0.0001
+    if params is not None:
+        dt = params.dt * params.scale
+
     df = pd.DataFrame(data['gm_mu_y'])
     df.columns = ['obj0', 'obj1']
-    df['ts'] = t / 1000
+    df['ts'] = t * dt
+    df["light_on"] = data["light"]
     df = df.melt(
-        id_vars='ts',
+        id_vars=['ts', 'light_on'],
         value_vars=['obj0', 'obj1'],
         var_name='Objects',
         value_name='Decision_prob',
@@ -478,15 +500,17 @@ def build_df1(data):
 if __name__ == '__main__':
 
     # %%
-    
-    from simulation.params import Params
-    from simulation.plot_simulation import plot_simplified
-    from simulation.plot_simulation import plot_data
-    
+
+    from src.simulation.params import Params
+    from src.simulation.plot_simulation import plot_simplified
+    from src.simulation.plot_simulation import plot_data
+        
+    pm = Params()
+
     SMALL_SIZE = 7
     MEDIUM_SIZE = 11
     BIGGER_SIZE = 18
-    
+
     plt.rc('font', size=SMALL_SIZE)  # controls default text sizes
     plt.rc('axes', titlesize=BIGGER_SIZE)  # fontsize of the axes title
     plt.rc('axes', labelsize=MEDIUM_SIZE)  # fontsize of the x and y labels
@@ -495,12 +519,12 @@ if __name__ == '__main__':
     plt.rc('legend', fontsize=MEDIUM_SIZE)  # legend fontsize
     plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
-    # %%
     dfs = []
     plot = True
     seed = 3
-    visual = True
-    obj = 0 
+    visual = False
+    obj = 1 
+    pm.obj_angle = 0
     data, frames = run_simulation(
         obj=obj,
         visual_trial=visual,
@@ -509,21 +533,20 @@ if __name__ == '__main__':
         seed=seed,
         plot=plot,
         jupyter=False,
+        params = pm,
     )
-    # %%
     df = build_df(
         data,
         mod='desynchronization',
-        filtered=True,
         win_gap=0.01,
         win_size=0.8,
     )
-    
+
     f = plot_data(data, return_type='fig', pm=data["params"])
     f.savefig(
         f"data_s{obj}_{'touch' if visual is False else 'visual'}.png"
     )
-    
+
     if not frames is None:
         make_simulation_gif_video(
             folder='.',

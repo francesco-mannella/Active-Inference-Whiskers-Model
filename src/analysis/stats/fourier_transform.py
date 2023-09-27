@@ -83,25 +83,13 @@ def errors(data, value):
 
 
 def band_filter(series, t="ts", variable="variable", value="value",
-        mode="high", filtered=True,h=0.001, s=0.5):
-    fltrd = series
-    fltrd["orig"] = fltrd[value].to_numpy()
-    fltrd[value] = fltrd.groupby(variable).apply(lambda x: filter_whisk(x, value, mode, h=h))[value]
-    
-    if filtered is False: value = "orig"
-    
-    fltrd["desynchronization"] = fltrd.groupby(t).apply(lambda x: errors(x, value))["errors"]   
-    fltrd["speed"] = fltrd.groupby(variable).apply(lambda x: add_speed(x, value))["speed"]
-    fltrd["accel"] = fltrd.groupby(variable).apply(lambda x: add_speed(x, "speed"))["speed"]
-    fltrd["momentum"] = fltrd.groupby(variable).apply(lambda x: add_speed(x, "accel"))["speed"]
-    vars = ["speed", "accel", "momentum"]
-    for v in vars:
-        x = fltrd[v].to_numpy()
-        x[:10] = np.mean(x[10:20])
-        x[np.abs(x) > x.std()*5] = x.mean()
-        fltrd[v] = np.abs(x)
+        mode="high", h=0.001, s=0.5):
 
-    del fltrd["orig"]
+    fvalue = "Filtered_Angle"
+    fltrd = series
+    fltrd[fvalue] = fltrd.groupby(variable).apply(lambda x: filter_whisk(x, value, mode, h=h))[value]
+    fltrd["desynchronization"] = fltrd.groupby(t).apply(lambda x: errors(x, value))["errors"]   
+
     return fltrd
 
 if __name__ == "__main__":

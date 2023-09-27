@@ -4,6 +4,11 @@ import scipy.signal as signal
 from scipy.interpolate import interp1d
 
 
+# This code checks if the signal module has an attribute called
+# "correlation_lags". If it does not, it defines a function called
+# "correlation_lags" and adds it to the signal module as an attribute. The
+# function takes three parameters: in1_size, in2_size, and mode. It creates two
+# arrays, x and y, and returns the concatenation of the two arrays.
 if not hasattr(signal, "correlation_lags"):
     def correlation_lags(in1_size, in2_size, mode="full"):
         x = -np.arange(in2_size)[::-1]
@@ -11,12 +16,11 @@ if not hasattr(signal, "correlation_lags"):
 
         return np.hstack([x, y[1:]])
 
-
     signal.correlation_lags = correlation_lags
 
 
 def whiten(*args):
-    """Standardize together a group of time-series"""
+    """Standardize a group of time-series by subtracting the mean and dividing by the standard deviation"""
     data = np.vstack([x for x in args])
 
     means = np.mean(data, 1).reshape(-1, 1)
@@ -26,7 +30,7 @@ def whiten(*args):
     return (data - means) / stds
 
 
-def max_corr_gap(x, y):
+def compute_crosscorrelation(x, y):
     """Compute the crosscorrelation between two time-series
 
     Parameters:
@@ -90,7 +94,7 @@ def roll_array(data, win_size, win_num):
     return rolled, idcs
 
 
-def moving_max_corr_gap(x, y, win_size, win_num, corr_th=0.5):
+def moving_crosscorrelation(x, y, win_size, win_num, corr_th=0.5):
     """Compute the max lagged correlation over a number of rolled windows of
         a dataset of two timeseries
 
@@ -115,7 +119,7 @@ def moving_max_corr_gap(x, y, win_size, win_num, corr_th=0.5):
     rolled_data, idcs = roll_array(data, win_size, win_num)
 
     # comute crosscorr on each window
-    lags_and_corrs = np.vstack([max_corr_gap(*batch.T)[:2] for batch in rolled_data])
+    lags_and_corrs = np.vstack([compute_crosscorrelation(*batch.T)[:2] for batch in rolled_data])
 
     # add lag filtered by corr threshold
     lags, corrs = lags_and_corrs.T
@@ -132,54 +136,56 @@ def moving_max_corr_gap(x, y, win_size, win_num, corr_th=0.5):
 
 
 
-def crosscorr_whisker_touch(ts: np.ndarray, diff: np.ndarray, touch: np.ndarray,
+def crosscorrs(ts: np.ndarray, x1: np.ndarray, x2: np.ndarray,
                             win_num, ws, corr_th):
     """
-    TODO - this function was 'crosscorrs'
-    Args:
-        ts:
-        diff:
-        touch:
-        win_num:
-        ws:
-        corr_th:
-
+    Calculates the cross-correlation between two arrays x1 and x2, using a moving window of size ws and win_num windows.
+    The correlation threshold is set to corr_th. The function returns an array of values interpolated from the moving cross-correlation.
+    
+    Parameters:
+    ts (np.ndarray): array of timestamps
+    x1 (np.ndarray): array of values
+    x2 (np.ndarray): array of values
+    win_num (int): number of windows
+    ws (int): window size
+    corr_th (float): correlation threshold
+    
     Returns:
-
+    values (np.ndarray): array of interpolated values
     """
-    n = diff.size
-    lags_and_corrs = moving_max_corr_gap(diff, touch, win_num=win_num, win_size=ws)
+    n = x1.size
+    lags_and_corrs = moving_crosscorrelation(x1, x2, win_num=win_num, win_size=ws)
     idcs, clags, *_ = lags_and_corrs
+
+    # This code creates a function 'f' that interpolates the values in the
+    # 'clags' array using the corresponding indices in the 'idcs' array. The
+    # 'values' array is then populated with the interpolated values from the
+    # 'ts' array.
     f = interp1d(idcs, clags, bounds_error=False, fill_value=np.nan)
     values = f(ts)
+
     values[idcs.astype(int)] = clags
     return values
 
-
-def compute_correlation_desynchronization_touch(
-        ts, desynchronization, touch,
-        win_gap=0.02,
-        win_size=None,
-        corr_th=0.5,):
-    """
-    TODO: this was compute_corrs_in_series
+def compute_correlation_desynchronization(
+        ts: np.ndarray, desynchronization: np.ndarray, touch: np.ndarray,
+        win_gap: float = 0.02,
+        win_size: float = None,
+        corr_th: float = 0.5) -> np.ndarray:
+    """Compute correlation between desynchronization and touch data.
 
     Args:
         ts: np.ndarray [N-timepoints] timestamps for the data
         desynchronization: np.ndarray [N-timepoints] 'difference' data for whiskers
         touch: np.ndarray [N-timepoints] 'touch' data for whiskers
-        win_gap: ?
-        win_size: ?
-        dt: ?
-        corr_th: ?
+        win_gap: Gap between windows in seconds.
+        win_size: Size of windows in seconds. If None, defaults to 1/5 of the total length.
+        corr_th: Correlation threshold.
 
     Returns:
-
+        np.ndarray: Correlation values.
     """
     l = len(desynchronization)
-    # TODO: dt was hardcoded at 0.001, however the difference
-    # between timepoins is 0.002 in the data, should it be
-    # np.diff(ts) or np.diff(ts) / 2?
     dt = np.diff(ts)[0] / 2
 
     wn = int(l // (win_gap / dt))
@@ -188,7 +194,7 @@ def compute_correlation_desynchronization_touch(
     else:
         ws = int(win_size / dt)
 
-    corrs = crosscorr_whisker_touch(
+    corrs = crosscorrs(
             ts,
             desynchronization, 
             touch,

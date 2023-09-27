@@ -1,11 +1,11 @@
 import numpy as np
 import gym, RatSim
-from simulation.ActiveInverenceModel import GM
-from simulation.params import Params
-from tools import make_simulation_gif_video
-from simulation.run_simulation import build_df, build_df1
-from analysis.stats.fourier_transform import band_filter
-from analysis.stats.crosscorr import compute_correlation_desynchronization_touch
+from src.simulation.ActiveInferenceModel import GM
+from src.simulation.params import Params
+from src.tools import make_simulation_gif_video
+from src.simulation.run_simulation import build_df, build_df1
+from src.analysis.stats.fourier_transform import band_filter
+from src.analysis.stats.crosscorr import compute_correlation_desynchronization
 import pandas as pd
 import seaborn as sns
 import os
@@ -60,7 +60,7 @@ def plot_behav_data(data, pm=None):
 
     # Compute crosscorr analysis in db
     df_flt = band_filter(df, variable="Whiskers", value="Angle", mode=(2, 5))
-    df_flt["corrs"] = compute_correlation_desynchronization_touch(
+    df_flt["corrs"] = compute_correlation_desynchronization(
             ts=df_flt["ts"].to_numpy(), 
             desynchronization=df_flt["desynchronization"].to_numpy(),
             touch=df_flt["touch"].to_numpy(),
@@ -186,7 +186,7 @@ def plot_behav_data(data, pm=None):
         x="ts",
         y="desynchronization",
         hue="Whiskers",
-        # palette=palette, ci=None)
+        # palette=palette, errorbar=None)
         errorbar=None,
     )
     ax[3].plot(
@@ -217,7 +217,7 @@ def plot_behav_data(data, pm=None):
         x="ts",
         y="corrs",
         hue="Whiskers",
-        # palette=palette, ci=None)
+        # palette=palette, errorbar=None)
         palette=palette,
         errorbar=None,
     )
@@ -253,8 +253,8 @@ def plot_simplified(data, pm=None):
 
     pm = Params() if pm is None else pm
 
-    df = build_df(data, disable_filtering=True)
-    df1 = build_df1(data)
+    df = build_df(data, disable_filtering=True, params=pm)
+    df1 = build_df1(data, pm)
 
     fig, ax = plt.subplots(2, 1, figsize=(8, 4), sharex=True)
     gs = GS(40, 80)
@@ -332,7 +332,7 @@ def plot_data(
     try:
         tch_time = df.query("touch>0")["ts"].iloc[0]
     except IndexError:
-        tch_time = -1
+        tch_time = -1e20
     # subplot 1
     ax[0].cla()
     ax[0].set_title("Whiskers movements")

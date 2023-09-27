@@ -23,7 +23,7 @@ import numpy as np
 
 
 def sech(x):
-    x[np.abs(x)>0.71e3] = 0.71e3 * np.sign(x[np.abs(x)>0.71e3])
+    x[np.abs(x) > 0.71e3] = 0.71e3 * np.sign(x[np.abs(x) > 0.71e3])
     return 1 / np.cosh(x)
 
 
@@ -32,7 +32,7 @@ def tanh(x):
 
 
 def rad_dist(x, s=1):
-    return np.exp(-0.5*(s**-2)*np.linalg.norm(x)**10)
+    return np.exp(-0.5 * (s**-2) * np.linalg.norm(x) ** 10)
 
 
 # Generative model class
@@ -135,7 +135,12 @@ class GM:
 
     # Derivative of the touch function with respect to v
     def dg_touch_dv(self, x, v, prec=50):
-        return -prec * sech(prec * v) * tanh(prec * v) * (0.5 * tanh(prec * x) + 0.5)
+        return (
+            -prec
+            * sech(prec * v)
+            * tanh(prec * v)
+            * (0.5 * tanh(prec * x) + 0.5)
+        )
 
     # Derivative of the touch function with respect to x
     def dg_touch_dx(self, x, v, prec=50):
@@ -173,17 +178,23 @@ class GM:
         self.PE_s_v = self.s_v - self.mu_y
         self.PE_nu = self.nu - np.dot(self.mu_y, self.g_nu)
 
-        self.PE_mu_y = self.dmu_y - (self.f_mu_y(self.nu2) - self.mu_y) / self.tau_mu_y
+        self.PE_mu_y = (
+            self.dmu_y - (self.f_mu_y(self.nu2) - self.mu_y) / self.tau_mu_y
+        )
 
         self.dF_dmu = (
             +self.PE_mu / self.Sigma_mu
-            - self.dg_touch_dx(x=self.mu, v=self.dmu) * self.PE_s_t / self.Sigma_s_t
+            - self.dg_touch_dx(x=self.mu, v=self.dmu)
+            * self.PE_s_t
+            / self.Sigma_s_t
         )
 
         self.dF_d_dmu = (
             +self.PE_mu / self.Sigma_mu
             - self.PE_s_p / self.Sigma_s_p
-            - self.dg_touch_dv(x=self.mu, v=self.dmu) * self.PE_s_t / self.Sigma_s_t
+            - self.dg_touch_dv(x=self.mu, v=self.dmu)
+            * self.PE_s_t
+            / self.Sigma_s_t
         )
 
         self.dF_dmu_x = -self.PE_s_x / self.Sigma_mu_x - np.sum(
@@ -192,18 +203,24 @@ class GM:
 
         numu_dist = np.abs(np.diff(self.mu_y).sum()) < 0.6
         numu_amp = 1
-        self.dF_dnu = -self.mu_x * self.PE_mu / self.Sigma_mu + self.PE_nu / (self.Sigma_nu + numu_amp*(numu_dist))
+        self.dF_dnu = -self.mu_x * self.PE_mu / self.Sigma_mu + self.PE_nu / (
+            self.Sigma_nu + numu_amp * (numu_dist)
+        )
 
         self.dF_dmu_y = (
             -self.PE_s_v / self.Sigma_s_v
-            -np.dot(self.dg_nu_dy(self.g_nu), self.PE_nu / (self.Sigma_nu + numu_amp*(1-numu_dist)))
+            - np.dot(
+                self.dg_nu_dy(self.g_nu),
+                self.PE_nu / (self.Sigma_nu + numu_amp * (1 - numu_dist)),
+            )
             - self.PE_mu_y / self.Sigma_mu_y
         )
 
         self.dF_d_dmu_y = +self.PE_mu_y / self.Sigma_mu_y
 
         self.dF_dnu2 = (
-            -self.PE_mu_y[0] / self.Sigma_mu_y[0] + self.PE_mu_y[1] / self.Sigma_mu_y[1]
+            -self.PE_mu_y[0] / self.Sigma_mu_y[0]
+            + self.PE_mu_y[1] / self.Sigma_mu_y[1]
         )
 
         # Action update
@@ -211,16 +228,17 @@ class GM:
         self.da = (
             -self.dt
             * self.eta_a
-            * (self.mu_x * self.PE_s_p / self.Sigma_s_p + self.PE_s_t / self.Sigma_s_t)
+            * (
+                self.mu_x * self.PE_s_p / self.Sigma_s_p
+                + self.PE_s_t / self.Sigma_s_t
+            )
         )
         # case with real dg/da
         # self.da = -self.dt*eta_a*x*self.dg_dv(x=self.mu, v=self.dmu)*self.PE_s[1]/self.Sigma_s[1]
 
         # Learning internal parameter nu
-        self.nu += (
-            -self.dt * self.eta_nu * self.dF_dnu
-        )  
-        self.nu = np.maximum(0, np.minimum(1,self.nu))
+        self.nu += -self.dt * self.eta_nu * self.dF_dnu
+        self.nu = np.maximum(0, np.minimum(1, self.nu))
         self.mu += self.dt * (self.dmu - self.eta_mu * self.dF_dmu)
         self.mu = np.maximum(0, np.minimum(1, self.mu))
         self.dmu += -self.dt * self.eta_dmu * self.dF_d_dmu
