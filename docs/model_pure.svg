@@ -2,13 +2,40 @@
 <!-- Created with Inkscape (http://www.inkscape.org/) -->
 
 <svg
-   width="272.33536mm"
-   height="170.19322mm"
-   viewBox="0 0 272.33535 170.19322"
+   width="268.0437mm"
+   height="166.19322mm"
+   viewBox="0 0 268.04369 166.19322"
    version="1.1"
    id="svg47968"
+   sodipodi:docname="model_pure.svg"
+   inkscape:version="1.1 (1:1.1+rc+202105240936+c4e8f9ed74)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
    xmlns="http://www.w3.org/2000/svg"
    xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview154"
+     pagecolor="#ffffff"
+     bordercolor="#cccccc"
+     borderopacity="1"
+     inkscape:pageshadow="0"
+     inkscape:pageopacity="1"
+     inkscape:pagecheckerboard="0"
+     inkscape:document-units="mm"
+     showgrid="false"
+     fit-margin-top="0"
+     fit-margin-left="0"
+     fit-margin-right="0"
+     fit-margin-bottom="0"
+     inkscape:zoom="0.79658183"
+     inkscape:cx="506.5393"
+     inkscape:cy="313.84095"
+     inkscape:window-width="1680"
+     inkscape:window-height="981"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg47968" />
   <defs
      id="defs47965">
     <rect
@@ -42,11 +69,12 @@
          id="path50624" />
     </marker>
     <meshgradient
-       id="meshgradient60373" />
+       id="meshgradient60373"
+       gradientTransform="translate(2.2916489,2.0000001)" />
   </defs>
   <g
      id="layer1"
-     transform="translate(-7.1410489,-10.206002)">
+     transform="translate(-9.4326978,-12.206002)">
     <ellipse
        style="color:#000000;overflow:visible;fill:#ffa94e;fill-opacity:1;fill-rule:evenodd;stroke:#727272;stroke-width:0.767292;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;stop-color:#000000"
        id="path48352"
